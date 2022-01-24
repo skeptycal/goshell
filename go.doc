@@ -1,3 +1,13 @@
 package goshell // import "github.com/skeptycal/goshell"
 
+var DisableCache bool
+var PWD = func() Pwd { ... }
+func CanUpdate(v interface{}) bool
+func Dir() (string, error)
 func Example()
+func Expand(path string) (string, error)
+func MustSet(ptr interface{})
+func Reset()
+func Set(ptr interface{}) error
+type Pwd interface{ ... }
+type Setter interface{ ... }
