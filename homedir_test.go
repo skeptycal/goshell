@@ -7,11 +7,24 @@ import (
 	"testing"
 )
 
-func Test_PWD(t *testing.T) {
-	home := &pwd{}
-	if home.disableCache == defaultDisableCache {
-		t.Fatalf("pwd.disabledCache: %#v  want: %v\n", home.disableCache, defaultDisableCache)
-		t.Fail()
+func Test_PWD_defaults(t *testing.T) {
+	home := &homedir{}
+	home.disableCache = defaultDisableCache
+
+	if home.disableCache != defaultDisableCache {
+		t.Fatalf("pwd.DisabledCache: %v  want: %v\n", home.disableCache, defaultDisableCache)
+	}
+
+	if home.homedirCache != "" {
+		t.Fatalf("pwd.homedirCache: %q  want: %q\n", home.homedirCache, "")
+	}
+
+	if HOME().Abs() == "" {
+		t.Fatalf("HOME().Abs(): %q want: not the empty string\n", HOME().Abs())
+	}
+
+	if HOME().Base() == "" {
+		t.Fatalf("HOME().Base(): %q want: not the empty string\n", HOME().Base())
 	}
 }
 
@@ -33,12 +46,12 @@ func patchEnv(key, value string) func() {
 func BenchmarkDir(b *testing.B) {
 	// We do this for any "warmups"
 	for i := 0; i < 10; i++ {
-		Dir()
+		GetHomeDir()
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Dir()
+		GetHomeDir()
 	}
 }
 
@@ -48,7 +61,7 @@ func TestDir(t *testing.T) {
 		t.Fatalf("err: %s", err)
 	}
 
-	dir, err := Dir()
+	dir, err := GetHomeDir()
 	if err != nil {
 		t.Fatalf("err: %s", err)
 	}
@@ -60,7 +73,7 @@ func TestDir(t *testing.T) {
 	DisableCache = true
 	defer func() { DisableCache = false }()
 	defer patchEnv("HOME", "")()
-	dir, err = Dir()
+	dir, err = GetHomeDir()
 	if err != nil {
 		t.Fatalf("err: %s", err)
 	}

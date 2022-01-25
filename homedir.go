@@ -18,37 +18,73 @@ import (
 // defaultDisableCache is the default value for disableCache.
 const defaultDisableCache = false
 
-var PWD = func() Pwd { return &pwd{} }
+// type strErrConvertFunc func(fn func() (string, error)) string
 
-type pwd struct {
-	homedirCache string `default:"geek"`
-	cacheLock    sync.RWMutex
-	disableCache bool `default:"true"`
+var (
+	HOME    = NewHome
+	dirfunc func() (string, error)
+)
+
+func init() {
+	if runtime.GOOS == "windows" {
+		dirfunc = dirWindows
+	} else {
+		// Unix-like system, so just assume Unix
+		dirfunc = dirUnix
+	}
 }
 
-type Pwd interface {
+func NewHome() Dir {
+	return &homedir{
+		disableCache: defaultDisableCache,
+	}
+}
+
+type homedir struct {
+	homedirCache string
+	disableCache bool
+	cacheLock    sync.RWMutex
+}
+
+type Dir interface {
 	Abs() string
 	Base() string
 	Reset()
 	SetCache(disabled bool)
+	// Ls(pattern string) []string
 }
 
-func (p *pwd) Abs() string {
+// Abs returns the home directory for the executing user.
+//
+// This uses an OS-specific method for discovering the home directory.
+// An error is returned if a home directory cannot be detected.
+func (p *homedir) Abs() string {
+	if !p.disableCache {
+		p.cacheLock.RLock()
+		cached := p.homedirCache
+		p.cacheLock.RUnlock()
+		if cached != "" {
+			return cached
+		}
+	}
 
-	return ""
+	defer p.unlock()
+	p.lock()
+
+	p.homedirCache = result
+	return result
 }
 
-func (p *pwd) Base() string {
-
-	return ""
+func (p *homedir) Base() string {
+	return filepath.Base(p.Abs())
 }
 
 // SetCache specifies whether directory name cache should be disabled.
 // The default is false (cache enabled).
-func (p *pwd) SetCache(disabled bool) {
+func (p *homedir) SetCache(disabled bool) {
 
-	// a lock is acquired to prevent changing p.disableCache during
-	// the processing of any cache activity.
+	// a lock is acquired to prevent changing p.disableCache
+	// concurrently with the updating of homedirCache.
 	defer p.cacheLock.Unlock()
 	p.cacheLock.Lock()
 
@@ -59,12 +95,46 @@ func (p *pwd) SetCache(disabled bool) {
 // the home directory. This generally never has to be called, but can be
 // useful in tests if you're modifying the home directory via the HOME
 // env var or something.
-func (p *pwd) Reset() {
+func (p *homedir) Reset() {
 	defer p.cacheLock.Unlock()
-	p.cacheLock.Lock()
+	p.lock()
 	homedirCache = ""
 }
 
+// lock locks rw for writing. If the lock is already locked for reading
+// or writing, lock blocks until the lock is available.
+func (p *homedir) lock() {
+	p.cacheLock.Lock()
+}
+
+// Unlock unlocks rw for writing. It is a run-time error if rw is not
+// locked for writing on entry to Unlock.
+//
+// As with Mutexes, a locked RWMutex is not associated with a particular
+// goroutine. One goroutine may RLock (Lock) a RWMutex and then arrange
+// for another goroutine to RUnlock (Unlock) it.
+func (p *homedir) unlock() {
+	p.cacheLock.Unlock()
+}
+
+func (p *homedir) get() (cached string) {
+	if !p.disableCache {
+		p.cacheLock.RLock()
+		cached = p.homedirCache
+		p.cacheLock.RUnlock()
+		if cached != "" {
+			return
+		}
+	}
+
+	return p.getNoCache()
+}
+
+func (p *homedir) getNoCache() string {
+	return ""
+}
+
+/// ------------------------------------------------------ old version
 // DisableCache will disable caching of the home directory. Caching is enabled
 // by default.
 var DisableCache bool
@@ -72,11 +142,11 @@ var DisableCache bool
 var homedirCache string
 var cacheLock sync.RWMutex
 
-// Dir returns the home directory for the executing user.
+// GetHomeDir returns the home directory for the executing user.
 //
 // This uses an OS-specific method for discovering the home directory.
 // An error is returned if a home directory cannot be detected.
-func Dir() (string, error) {
+func GetHomeDir() (string, error) {
 	if !DisableCache {
 		cacheLock.RLock()
 		cached := homedirCache
@@ -121,7 +191,7 @@ func Expand(path string) (string, error) {
 		return "", errors.New("cannot expand user-specific home dir")
 	}
 
-	dir, err := Dir()
+	dir, err := GetHomeDir()
 	if err != nil {
 		return "", err
 	}
